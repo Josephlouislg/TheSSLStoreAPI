@@ -138,99 +138,99 @@ class SSLStoreAPI():
     def __escape(self, s):
         return urllib.quote_plus(s.encode("utf-8"))
 
-	@staticmethod
-	def generate_chain(cert_text, separate=False):
-	    issuer_re = re.compile('^CA Issuers - URI:(.*)$', re.MULTILINE)
-	    store = None
-	    chain = ''
-	    first = True
-	    found = True
-	    n = 0
-	    certs = []
-	    while found:
-	        # parse the certificate data
-	        try:
-	            cert = crypto.load_certificate(crypto.FILETYPE_PEM, cert_text)
-	        except:
-	            cert = crypto.load_certificate(crypto.FILETYPE_ASN1, cert_text)
-	        certs.append(cert)
+    @staticmethod
+    def generate_chain(cert_text, separate=False):
+        issuer_re = re.compile('^CA Issuers - URI:(.*)$', re.MULTILINE)
+        store = None
+        chain = ''
+        first = True
+        found = True
+        n = 0
+        certs = []
+        while found:
+            # parse the certificate data
+            try:
+                cert = crypto.load_certificate(crypto.FILETYPE_PEM, cert_text)
+            except:
+                cert = crypto.load_certificate(crypto.FILETYPE_ASN1, cert_text)
+            certs.append(cert)
 
-	        # check and write the certificate
-	        if cert.has_expired():
-	            raise Exception("Error: Certificate expired")
+            # check and write the certificate
+            if cert.has_expired():
+                raise Exception("Error: Certificate expired")
 
-	        if n != 0:
-	            chain += crypto.dump_certificate(crypto.FILETYPE_PEM, cert) + "\n"
-	        n = n+1
-	        # check if we should stop
-	        if store:
-	            try:
-	                crypto.X509StoreContext(store, cert).verify_certificate()
-	                break
-	            except:
-	                pass
+            if n != 0:
+                chain += crypto.dump_certificate(crypto.FILETYPE_PEM, cert) + "\n"
+            n = n+1
+            # check if we should stop
+            if store:
+                try:
+                    crypto.X509StoreContext(store, cert).verify_certificate()
+                    break
+                except:
+                    pass
 
-	        # try to fetch the next certificate
-	        found = False
-	        num_extensions = cert.get_extension_count()
-	        for i in range(0,num_extensions-1):
-	            extension = cert.get_extension(i)
-	            if extension.get_short_name() == "authorityInfoAccess":
-	                aia = str(extension)
-	                m = issuer_re.search(aia)
-	                if m:
-	                    found = True
-	                    infile = urllib2.urlopen(m.group(1))
-	                    contenttype = infile.info().gettype()
-	                    cert_text = infile.read()
-	                    if contenttype == "application/x-pkcs7-mime":
-	                        # HACK: call the openssl cli tool since pyOpenSSL doesn't export the functions to process PKCS#7 data
-	                        proc = subprocess.Popen(["openssl", "pkcs7", "-inform", "DER", "-outform", "PEM", "-print_certs"],
-	                                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-	                        out, err = proc.communicate(cert_text)
-	                        if proc.returncode != 0:
-	                            proc = subprocess.Popen(["openssl", "pkcs7", "-inform", "PEM", "-outform", "PEM", "-print_certs"],
-	                                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-	                            out, err = proc.communicate(cert_text)
-	                            if proc.returncode != 0:
-	                                raise Exception("Invalid PKCS#7 data encountered\n")
-	                        cert_text = out
-	    return chain
+            # try to fetch the next certificate
+            found = False
+            num_extensions = cert.get_extension_count()
+            for i in range(0,num_extensions-1):
+                extension = cert.get_extension(i)
+                if extension.get_short_name() == "authorityInfoAccess":
+                    aia = str(extension)
+                    m = issuer_re.search(aia)
+                    if m:
+                        found = True
+                        infile = urllib2.urlopen(m.group(1))
+                        contenttype = infile.info().gettype()
+                        cert_text = infile.read()
+                        if contenttype == "application/x-pkcs7-mime":
+                            # HACK: call the openssl cli tool since pyOpenSSL doesn't export the functions to process PKCS#7 data
+                            proc = subprocess.Popen(["openssl", "pkcs7", "-inform", "DER", "-outform", "PEM", "-print_certs"],
+                                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                            out, err = proc.communicate(cert_text)
+                            if proc.returncode != 0:
+                                proc = subprocess.Popen(["openssl", "pkcs7", "-inform", "PEM", "-outform", "PEM", "-print_certs"],
+                                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                out, err = proc.communicate(cert_text)
+                                if proc.returncode != 0:
+                                    raise Exception("Invalid PKCS#7 data encountered\n")
+                            cert_text = out
+        return chain
 
     @staticmethod
     def createKeyPair(type=crypto.TYPE_RSA, bits=2048):
-	    """
-	    Create a public/private key pair.
-	    Arguments: type - Key type, must be one of TYPE_RSA and TYPE_DSA
+        """
+        Create a public/private key pair.
+        Arguments: type - Key type, must be one of TYPE_RSA and TYPE_DSA
 
-	               bits - Number of bits to use in the key
-	    Returns:   The public/private key pair in a PKey object
-	    """
-	    pkey = crypto.PKey()
-	    pkey.generate_key(type, bits)
-	    return pkey
+                   bits - Number of bits to use in the key
+        Returns:   The public/private key pair in a PKey object
+        """
+        pkey = crypto.PKey()
+        pkey.generate_key(type, bits)
+        return pkey
 
     @staticmethod
     def createCertRequest(pkey, digest="md5", **names):
-	    """
-	    Create a certificate request.
-	    Arguments: pkey   - The key to associate with the request
-	               digest - Digestion method to use for signing, default is md5
-	               **name - The name of the subject of the request, possible
-	                        arguments are:
-	                          C     - Country name
-	                          ST    - State or province name
-	                          L     - Locality name
-	                          O     - Organization name
-	                          OU    - Organizational unit name
-	                          CN    - Common name
-	                          emailAddress - E-mail address
-	    Returns:   The certificate request in an X509Req object
-	    """
-	    req = crypto.X509Req()
-	    subj = req.get_subject()
-	    for (key,value) in names.items():
-	        setattr(subj, key, value)
-	    req.set_pubkey(pkey)
-	    req.sign(pkey, digest)
-	    return (req, crypto.dump_certificate_request(crypto.FILETYPE_PEM, req))
+        """
+        Create a certificate request.
+        Arguments: pkey   - The key to associate with the request
+                   digest - Digestion method to use for signing, default is md5
+                   **name - The name of the subject of the request, possible
+                            arguments are:
+                              C     - Country name
+                          ST    - State or province name
+                              L     - Locality name
+                              O     - Organization name
+                              OU    - Organizational unit name
+                              CN    - Common name
+                              emailAddress - E-mail address
+        Returns:   The certificate request in an X509Req object
+        """
+        req = crypto.X509Req()
+        subj = req.get_subject()
+        for (key,value) in names.items():
+            setattr(subj, key, value)
+        req.set_pubkey(pkey)
+        req.sign(pkey, digest)
+        return (req, crypto.dump_certificate_request(crypto.FILETYPE_PEM, req))
